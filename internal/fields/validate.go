@@ -137,6 +137,9 @@ type Validator struct {
 	// expectedDatasets contains the value expected for dataset fields.
 	expectedDatasets []string
 
+	// requiredFieldsByCategories contains the required fields for pkgManifest categories.
+	requiredFieldsByCategories map[string][]string
+
 	defaultNumericConversion bool
 
 	// fields that store keywords, but can be received as numeric types.
@@ -226,6 +229,14 @@ func WithExpectedDatasets(datasets []string) ValidatorOption {
 func WithEnabledImportAllECSSChema(importSchema bool) ValidatorOption {
 	return func(v *Validator) error {
 		v.enabledImportAllECSSchema = importSchema
+		return nil
+	}
+}
+
+// WithRequiredFieldsByCategories configures the validator to check if requiredFields are present based on category.
+func WithRequiredFieldsByCategories(requiredFields map[string][]string) ValidatorOption {
+	return func(v *Validator) error {
+		v.requiredFieldsByCategories = requiredFields
 		return nil
 	}
 }
@@ -560,10 +571,42 @@ func (v *Validator) ValidateDocumentBody(body json.RawMessage) multierror.Error 
 
 // ValidateDocumentMap validates the provided document as common.MapStr.
 func (v *Validator) ValidateDocumentMap(body common.MapStr) multierror.Error {
-	errs := v.validateDocumentValues(body)
+	var errs multierror.Error
+	errs = append(errs, v.validateDocumentValues(body)...)
 	errs = append(errs, v.validateMapElement("", body, body)...)
+	if v.requiredFieldsByCategories != nil && len(v.requiredFieldsByCategories) > 0 {
+		errs = append(errs, v.validateRequiredFieldsByCategories(body)...)
+	}
 	if len(errs) == 0 {
 		return nil
+	}
+	return errs
+}
+
+// Validates required fields based on categories of pkgManifest.
+//
+// Currently validates required fields for Elastic Security solution
+// from https://www.elastic.co/guide/en/security/current/siem-field-reference.html
+func (v *Validator) validateRequiredFieldsByCategories(body common.MapStr) multierror.Error {
+	return v.validateRequiredFieldsForSecurity(body)
+}
+
+var requiredFieldNamesForSecurity = []string{
+	"@timestamp",
+	"ecs.version",
+	"event.kind",
+	"event.category",
+	"event.type",
+}
+
+func (v *Validator) validateRequiredFieldsForSecurity(body common.MapStr) multierror.Error {
+	var errs multierror.Error
+	for _, requiredField := range requiredFieldNamesForSecurity {
+		_, err := body.GetValue(requiredField)
+		if !errors.Is(err, common.ErrKeyNotFound) {
+			continue
+		}
+		errs = append(errs, fmt.Errorf("field %q is required for Security Integrations", requiredField))
 	}
 	return errs
 }

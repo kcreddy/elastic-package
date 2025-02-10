@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 
 	"github.com/elastic/elastic-package/internal/benchrunner/runners/stream"
 	"github.com/elastic/elastic-package/internal/fields"
@@ -161,11 +162,13 @@ func (r tester) verifySampleEvent(pkgManifest *packages.PackageManifest) []testr
 		results, _ := resultComposer.WithError(err)
 		return results
 	}
+	requiredFieldsByCategories := r.getRequiredFieldsByCategories(pkgManifest)
 	fieldsValidator, err := fields.CreateValidatorForDirectory(filepath.Dir(sampleEventPath),
 		fields.WithSpecVersion(pkgManifest.SpecVersion),
 		fields.WithDefaultNumericConversion(),
 		fields.WithExpectedDatasets(expectedDatasets),
 		fields.WithEnabledImportAllECSSChema(true),
+		fields.WithRequiredFieldsByCategories(requiredFieldsByCategories),
 	)
 	if err != nil {
 		results, _ := resultComposer.WithError(fmt.Errorf("creating fields validator for data stream failed: %w", err))
@@ -229,6 +232,25 @@ func (r tester) getExpectedDatasets(pkgManifest *packages.PackageManifest) ([]st
 		return []string{ds}, nil
 	}
 	return []string{pkgManifest.Name + "." + dsName}, nil
+}
+
+func (r tester) getRequiredFieldsByCategories(pkgManifest *packages.PackageManifest) map[string][]string {
+	requiredFields := make(map[string][]string)
+	if slices.Contains(pkgManifest.Categories, "security") {
+		requiredFields["security"] = r.getRequiredFieldsForSecurity()
+	}
+
+	return requiredFields
+}
+
+func (r tester) getRequiredFieldsForSecurity() []string {
+	return []string{
+		"@timestamp",
+		"ecs.version",
+		"event.kind",
+		"event.category",
+		"event.type",
+	}
 }
 
 func (r tester) TearDown(ctx context.Context) error {
