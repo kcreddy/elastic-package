@@ -588,18 +588,15 @@ func (v *Validator) ValidateDocumentMap(body common.MapStr) multierror.Error {
 // Currently validates required fields for Elastic Security solution
 // from https://www.elastic.co/guide/en/security/current/siem-field-reference.html
 func (v *Validator) validateRequiredFieldsByCategories(body common.MapStr) multierror.Error {
-	return v.validateRequiredFieldsForSecurity(body)
+	requiredFieldsForSecurity, ok := v.requiredFieldsByCategories["security"]
+	if !ok {
+		// Nothing to do.
+		return nil
+	}
+	return v.validateRequiredFieldsForSecurity(body, requiredFieldsForSecurity)
 }
 
-var requiredFieldNamesForSecurity = []string{
-	"@timestamp",
-	"ecs.version",
-	"event.kind",
-	"event.category",
-	"event.type",
-}
-
-func (v *Validator) validateRequiredFieldsForSecurity(body common.MapStr) multierror.Error {
+func (v *Validator) validateRequiredFieldsForSecurity(body common.MapStr, requiredFieldNamesForSecurity []string) multierror.Error {
 	var errs multierror.Error
 	for _, requiredField := range requiredFieldNamesForSecurity {
 		_, err := body.GetValue(requiredField)
